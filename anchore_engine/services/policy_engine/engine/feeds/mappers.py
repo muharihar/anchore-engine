@@ -346,3 +346,70 @@ class VulnerabilityFeedDataMapper(FeedDataMapper):
         #                db_rec.vulnerable_in.append(v_in)
 
         return db_rec
+
+
+class GithubFeedDataMapper(FeedDataMapper):
+    """
+    Maps a Github record into an GithubMetadata ORM object
+
+    JSON Record is structured like::
+
+        {'key': 'GHSA-73m2-3pwg-5fgc',
+        'namespace': 'github:python',
+        'payload': {'Vulnerability': {}, 'Advisory': advisory}
+
+    And the Advisory itself::
+
+        {'CVE': ['GHSA-73m2-3pwg-5fgc', 'CVE-2020-5236'],
+         'FixedIn': [{'ecosystem': 'python',
+                      'fixedin': None,
+                      'identifier': '1.4.3',
+                      'name': 'waitress'},
+                     {'ecosystem': 'os',
+                      'fixedin': None,
+                      'identifier': None,
+                      'name': 'waitress'}],
+         'Metadata': {'CVE': ['GHSA-73m2-3pwg-5fgc', 'CVE-2020-5236']},
+         'Severity': 'Critical',
+         'Summary': 'Critical severity vulnerability that affects waitress',
+         'url': 'https://github.com/advisories/GHSA-73m2-3pwg-5fgc',
+         'withdrawn': None}
+
+{
+    'Advisory': {
+        'CVE': ['GHSA-rpch-cqj9-h65r', 'CVE-2018-1000210'],
+        'FixedIn': [
+            {'ecosystem': 'nuget', 'fixedin': None, 'identifier': '5.0.0', 'name': 'YamlDotNet'},
+            {'ecosystem': 'nuget', 'fixedin': None, 'identifier': '5.0.0', 'name': 'YamlDotNet.Signed'}
+        ],
+        'Metadata': {'CVE': ['GHSA-rpch-cqj9-h65r', 'CVE-2018-1000210']}, 'Severity': 'High', 'Summary': 'High severity vulnerability that affects YamlDotNet and YamlDotNet.Signed', 'url': 'https://github.com/advisories/GHSA-rpch-cqj9-h65r', 'withdrawn': None}, 'Vulnerability': {}}
+
+
+    """
+
+    def map(self, record_json):
+        advisory = record_json['Advisory']
+
+        db_rec = Vulnerability()
+        db_rec.id = advisory['ghsaId']
+        db_rec.name = advisory['ghsaId']
+        db_rec.namespace_name = advisory['namespace']
+        db_rec.description = advisory['Summary']
+        db_rec.severity = advisory.get('Severity', 'Unknown') or 'Unknown'
+        db_rec.link = advisory['url']
+        references = ["https://nvd.nist.gov/vuln/detail/{}".format(i) for i in advisory['CVE']]
+        db_rec.references = references
+
+        for f in advisory['FixedIn']:
+            fix = FixedArtifact()
+            fix.name = f['name']
+            fix.version = f['identifier']
+            fix.vulnerability_id = db_rec.id
+            fix.namespace_name = f['namespace']
+            fix.vendor_no_advisory = False
+            # the advisory summary is the same as db_rec.description, do we need to do this again?
+            fix.fix_metadata = {'VendorAdvisorySummary': ''}
+
+            db_rec.fixed_in.append(fix)
+
+        return db_rec
